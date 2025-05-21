@@ -280,7 +280,7 @@ def send_query_to_llm(query: str):
     json_payload = {
         "model": MODEL_NAME,
         "messages": [
-            {"role": "system", "content": "You are a helpful assistant that provides concise, direct, and actionable answers, especially regarding shell commands and technical queries. Keep responses brief and to the point."},
+            {"role": "system", "content": "You are a helpful assistant that provides concise, direct, and actionable answers, especially regarding shell commands and technical queries. Keep responses brief and to the point. Use 10 sentences to reply at most."},
             {"role": "user", "content": query}
         ],
         "max_tokens": 1500,
