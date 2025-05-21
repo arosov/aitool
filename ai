@@ -203,6 +203,43 @@ class MarkdownStream:
         Splits text into chunks on blank lines "\n\n".
         """
 
+def get_manpage_content(command_names_str):
+    """Fetches man pages for a comma-separated list of commands."""
+    if not command_names_str:
+        return ""
+    command_names = [cmd.strip() for cmd in command_names_str.split(',') if cmd.strip()]
+    all_man_content = []
+    for command_name in command_names:
+        try:
+            process = subprocess.run(
+                ["man", command_name],
+                capture_output=True,
+                text=True,
+                check=False,  # Do not raise exception for non-zero exit code
+                env={"LANG": "C", "LC_ALL": "C"}  # Ensure consistent 'man' output language
+            )
+            if process.returncode == 0:
+                all_man_content.append(f"--- Manpage for {command_name} ---\n{process.stdout.strip()}")
+            else:
+                if DEBUG_MODE:
+                    print(f"Debug: Could not retrieve manpage for {command_name}. Exit code: {process.returncode}", file=sys.stderr)
+                all_man_content.append(f"--- No manpage found or error for {command_name} ---")
+        except FileNotFoundError:
+            if DEBUG_MODE:
+                print(f"Debug: 'man' command not found. Cannot retrieve manpage for {command_name}.", file=sys.stderr)
+            all_man_content.append(f"--- 'man' command not found, cannot retrieve manpage for {command_name} ---")
+            # If 'man' itself is not found, we might want to stop trying for others,
+            # but current loop structure will continue, which is acceptable.
+        except Exception as e:
+            if DEBUG_MODE:
+                print(f"Debug: Error retrieving manpage for {command_name}: {e}", file=sys.stderr)
+            all_man_content.append(f"--- Error retrieving manpage for {command_name}: {e} ---")
+    
+    if not all_man_content:
+        return ""
+    return "\n\n".join(all_man_content) + "\n"
+
+
 def check_and_start_service():
     """Checks if the systemd user service is running and starts it if not."""
     try:
@@ -315,34 +352,63 @@ def send_query_to_llm(query: str):
         print("", flush=True) # Add a final newline after the streamed response is complete.
 
 # Call the function to ensure the service is running
-check_and_start_service
+check_and_start_service() # Corrected: added ()
 
-# Check if arguments are provided
-if len(sys.argv) > 1:
-    # Join all arguments after the script name into a single string for the user input
-    user_input = " ".join(sys.argv[1:])
-    send_query_to_llm(user_input)
-    print("")
+man_commands_str = None
+user_query_parts = []
+args = sys.argv[1:]
+i = 0
+while i < len(args):
+    arg = args[i]
+    if arg == "-man":
+        if i + 1 < len(args):
+            man_commands_str = args[i+1]
+            i += 1  # Consume the value of -man
+        else:
+            print("Error: -man option requires a comma-separated list of commands argument.", file=sys.stderr)
+            print("Usage: ai -man <command1,command2> your query here", file=sys.stderr)
+            sys.exit(1)
+    else:
+        user_query_parts.append(arg)
+    i += 1
+
+user_input_query = " ".join(user_query_parts)
+
+if user_input_query:  # If there's an actual query from CLI args
+    man_pages_document = ""
+    if man_commands_str:
+        man_pages_document = get_manpage_content(man_commands_str)
+
+    final_query_to_llm = user_input_query
+    if man_pages_document:  # Only add prefix if there's actual man content
+        final_query_to_llm = f"Context from man pages:\n{man_pages_document.strip()}\n\nUser query: {user_input_query}"
+    
+    send_query_to_llm(final_query_to_llm)
+    print("")  # For consistent spacing after output
     sys.exit(0)
-
-print("")
-print("Type your commands/questions. For short, specific answers (like shell commands), be direct.")
-print("Type 'exit' or 'quit' to end the session.")
-print("")
-
-# Chat loop (only if no arguments were provided)
-while True:
-    try:
-        user_input = input("> ")
-    except EOFError: # Handle Ctrl+D
-        print("\nExiting chat. Goodbye!")
-        break
-
-    if user_input.lower() in ["exit", "quit"]:
-        print("Exiting chat. Goodbye!")
-        break
-
-    send_query_to_llm(user_input)
+elif man_commands_str:  # -man was given but no actual query string
+    print("Error: -man option was provided, but no query was specified.", file=sys.stderr)
+    print("Usage: ai -man <command1,command2> your query here", file=sys.stderr)
+    sys.exit(1)
+else:  # No CLI arguments for query, or only empty -man, proceed to interactive mode
     print("")
+    print("Type your commands/questions. For short, specific answers (like shell commands), be direct.")
+    print("Type 'exit' or 'quit' to end the session.")
+    print("")
+
+    # Chat loop (only if no arguments were provided that constitute a query)
+    while True:
+        try:
+            user_input_interactive = input("> ")
+        except EOFError:  # Handle Ctrl+D
+            print("\nExiting chat. Goodbye!")
+            break
+
+        if user_input_interactive.lower() in ["exit", "quit"]:
+            print("Exiting chat. Goodbye!")
+            break
+
+        send_query_to_llm(user_input_interactive)  # Interactive mode doesn't use -man
+        print("")
 
 
