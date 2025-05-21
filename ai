@@ -241,6 +241,39 @@ def get_manpage_content(command_names_str):
     return "\n\n".join(all_man_content) + "\n"
 
 
+def get_command_output(command_to_run_str):
+    """Executes a command and captures its output."""
+    if not command_to_run_str:
+        return ""
+    
+    print(f"Fetching output for command: {command_to_run_str}...")
+    try:
+        # Using shlex.split to handle command with arguments appropriately
+        import shlex
+        cmd_parts = shlex.split(command_to_run_str)
+        process = subprocess.run(
+            cmd_parts,
+            capture_output=True,
+            text=True,
+            check=False,  # Do not raise exception for non-zero exit code
+            env={"LANG": "C", "LC_ALL": "C"}  # Ensure consistent output language
+        )
+        if process.returncode == 0:
+            return f"--- Output for command '{command_to_run_str}' ---\n{process.stdout.strip()}\n"
+        else:
+            if DEBUG_MODE:
+                print(f"Debug: Command '{command_to_run_str}' exited with code {process.returncode}. Stderr: {process.stderr.strip()}", file=sys.stderr)
+            return f"--- Command '{command_to_run_str}' failed or produced no output. Exit code: {process.returncode}. Stderr: {process.stderr.strip()} ---\n"
+    except FileNotFoundError:
+        if DEBUG_MODE:
+            print(f"Debug: Command not found: {cmd_parts[0]} when trying to run '{command_to_run_str}'.", file=sys.stderr)
+        return f"--- Command not found: {cmd_parts[0]} (from '{command_to_run_str}') ---\n"
+    except Exception as e:
+        if DEBUG_MODE:
+            print(f"Debug: Error executing command '{command_to_run_str}': {e}", file=sys.stderr)
+        return f"--- Error executing command '{command_to_run_str}': {e} ---\n"
+
+
 def check_and_start_service():
     """Checks if the systemd user service is running and starts it if not."""
     try:
@@ -355,6 +388,7 @@ def send_query_to_llm(query: str):
 check_and_start_service() # Corrected: added ()
 
 man_commands_str = None
+help_command_str = None # For the new -cmd_help argument
 user_query_parts = []
 args = sys.argv[1:]
 i = 0
@@ -366,7 +400,15 @@ while i < len(args):
             i += 1  # Consume the value of -man
         else:
             print("Error: -man option requires a comma-separated list of commands argument.", file=sys.stderr)
-            print("Usage: ai -man <command1,command2> your query here", file=sys.stderr)
+            print("Usage: ai [-man <command1,command2>] [-cmd_help \"<command_with_args>\"] your query here", file=sys.stderr)
+            sys.exit(1)
+    elif arg == "-cmd_help":
+        if i + 1 < len(args):
+            help_command_str = args[i+1]
+            i += 1  # Consume the value of -cmd_help
+        else:
+            print("Error: -cmd_help option requires a command string argument.", file=sys.stderr)
+            print("Usage: ai [-man <command1,command2>] [-cmd_help \"<command_with_args>\"] your query here", file=sys.stderr)
             sys.exit(1)
     else:
         user_query_parts.append(arg)
@@ -375,22 +417,37 @@ while i < len(args):
 user_input_query = " ".join(user_query_parts)
 
 if user_input_query:  # If there's an actual query from CLI args
-    man_pages_document = ""
+    context_documents = []
     if man_commands_str:
-        man_pages_document = get_manpage_content(man_commands_str)
+        man_pages_content = get_manpage_content(man_commands_str)
+        if man_pages_content.strip(): # Add only if there's actual content
+            context_documents.append(f"Context from man pages:\n{man_pages_content.strip()}")
+
+    if help_command_str:
+        command_output_content = get_command_output(help_command_str)
+        if command_output_content.strip(): # Add only if there's actual content
+            context_documents.append(f"Context from command output ('{help_command_str}'):\n{command_output_content.strip()}")
 
     final_query_to_llm = user_input_query
-    if man_pages_document:  # Only add prefix if there's actual man content
-        final_query_to_llm = f"Context from man pages:\n{man_pages_document.strip()}\n\nUser query: {user_input_query}"
+    if context_documents:
+        full_context = "\n\n".join(context_documents)
+        final_query_to_llm = f"{full_context}\n\nUser query: {user_input_query}"
     
     send_query_to_llm(final_query_to_llm)
     print("")  # For consistent spacing after output
     sys.exit(0)
-elif man_commands_str:  # -man was given but no actual query string
-    print("Error: -man option was provided, but no query was specified.", file=sys.stderr)
-    print("Usage: ai -man <command1,command2> your query here", file=sys.stderr)
+elif man_commands_str or help_command_str:  # -man or -cmd_help was given but no actual query string
+    error_message = "Error: "
+    if man_commands_str:
+        error_message += "-man option was provided"
+    if help_command_str:
+        if man_commands_str: error_message += " and "
+        error_message += "-cmd_help option was provided"
+    error_message += ", but no query was specified."
+    print(error_message, file=sys.stderr)
+    print("Usage: ai [-man <command1,command2>] [-cmd_help \"<command_with_args>\"] your query here", file=sys.stderr)
     sys.exit(1)
-else:  # No CLI arguments for query, or only empty -man, proceed to interactive mode
+else:  # No CLI arguments for query, or only empty options, proceed to interactive mode
     print("")
     print("Type your commands/questions. For short, specific answers (like shell commands), be direct.")
     print("Type 'exit' or 'quit' to end the session.")
