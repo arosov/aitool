@@ -249,7 +249,6 @@ def check_and_start_service():
             check=True,
             capture_output=True
         )
-        print(f"{LLAMA_SERVICE_NAME} is already running.")
     except subprocess.CalledProcessError:
         # Service is not active, try to start it
         print(f"{LLAMA_SERVICE_NAME} is not running. Attempting to start it...")
