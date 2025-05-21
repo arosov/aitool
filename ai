@@ -284,7 +284,7 @@ def send_query_to_llm(query: str):
             {"role": "system", "content": "You are a helpful assistant that provides concise, direct, and actionable answers, especially regarding shell commands and technical queries. Keep responses brief and to the point."},
             {"role": "user", "content": query}
         ],
-        "max_tokens": 300,
+        "max_tokens": 1500,
         "temperature": 0.2,
         "stream": True
     }
