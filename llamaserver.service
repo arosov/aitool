@@ -5,7 +5,7 @@ After=network.target
 [Service]
 # Working directory for the llamafile executable.
 # Change this to the directory where your llamafile executable and model are located.
-WorkingDirectory=%h/llamafiles/
+WorkingDirectory=/%h/llamafiles/
 
 # The command to execute.
 # - Replace /opt/llamafile/llamafile with the actual path to your llamafile executable.
@@ -13,7 +13,7 @@ WorkingDirectory=%h/llamafiles/
 # - The --port 8080 argument sets the server port. Change if needed.
 # - The --host 0.0.0.0 argument makes the server accessible from all network interfaces.
 #   For production, you might want to bind to a specific IP address or '127.0.0.1' if only local access is needed.
-ExecStart=/bin/bash -c './google_gemma-3-1b-it-Q6_K.llamafile --port 4141 --host 127.0.0.1 --server'
+ExecStart=/%h/llamafiles/google_gemma-3-1b-it-Q6_K.llamafile --port 4141 --host 127.0.0.1 --server
 
 
 # Standard output and error redirection.
